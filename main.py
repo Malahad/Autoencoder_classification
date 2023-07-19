@@ -11,7 +11,8 @@ from matplotlib import pyplot as plt
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
-from Dense_custom import *
+from Custom_dense import *
+from WeightsOrthogonalityConstraint import *
 from tensorflow.keras.layers import Input, Dense, Layer, Dropout, InputSpec
 import re
 import os
@@ -61,31 +62,33 @@ X_train, X_test = train_test_split(Xscaled, test_size=0.2, random_state=1)
 nb_epoch = 1500
 batch_size = 1000
 input_dim = Xscaled.shape[1]
-encoding_dim = 15
+encoding_dim = 150
 learning_rate = 1e-3
-     
-encoder_1 = Dense(500, activation="relu", input_shape=(input_dim,), use_bias = True, name='encoder_1') 
-encoder_2 = Dense(encoding_dim, activation="relu", input_shape=(500,), use_bias = True, name='encoder_2', kernel_regularizer=WeightsOrthogonalityConstraint(encoding_dim, weightage=1., axis=0)) 
 
-# decoder_1 = Dense(100, activation="relu", input_shape=(encoding_dim,), use_bias = True, name='decoder')
-decoder_2 = Dense(input_dim, activation="relu", input_shape=(100,), use_bias = True, name='decoder_2')
+custom_reg = WeightsOrthogonalityConstraint(encoding_dim, weightage=1., axis=0)
+encoder_1 = Dense(encoding_dim, activation="linear", input_shape=(input_dim,), use_bias = True, kernel_regularizer= custom_reg,
+                  name='encoder_1') 
+# encoder_2 = Dense(encoding_dim, activation="linear", input_shape=(100,), use_bias = True, name='encoder_2')
 
-decoder_1 = Custom_dense(500, activation="relu", freeze_weights = encoder_2, use_bias = False, name='decoder_1')
-# decoder_2 = Custom_dense(input_dim, activation="relu", freeze_weights = encoder_1, use_bias = False, name='decoder_2')
+# decoder_1 = Dense(1000, activation="relu", input_shape=(encoding_dim,), use_bias = True, name='decoder')
+# decoder_2 = Dense(input_dim, activation="relu", input_shape=(100,), use_bias = True, name='decoder_2')
+
+decoder_1 = Custom_dense(input_dim, activation="linear", freeze_weights = encoder_1, use_bias = False, name='decoder_1')
+# decoder_2 = Custom_dense(input_dim, activation="linear", freeze_weights = encoder_1, use_bias = False, name='decoder_2')
 
 autoencoder = Sequential(name='autoencoder')
 autoencoder.add(encoder_1)
-autoencoder.add(Dropout(.25))
-autoencoder.add(encoder_2)
+autoencoder.add(Dropout(.05))
+# autoencoder.add(encoder_2)
 autoencoder.add(decoder_1)
-autoencoder.add(decoder_2)
+# autoencoder.add(decoder_2)
 
 autoencoder.compile(metrics=['mse'],
                     loss='mean_squared_error',
                     optimizer='adam')
 autoencoder.summary()
 
-history = autoencoder.fit(X_train, X_train,
+autoenc_history = autoencoder.fit(X_train, X_train,
                 epochs=nb_epoch,
                 batch_size=batch_size,
                 validation_data = (X_test, X_test),
@@ -97,23 +100,22 @@ history = autoencoder.fit(X_train, X_train,
 scaler = MinMaxScaler()
 scaler.fit(X)
 Xscaled = scaler.transform(X)
-Y_classif = Y_type
+Y_classif = Y_class
 X_train_classif, X_test_classif, Y_train_classif, Y_test_classif = train_test_split(Xscaled, Y_classif, test_size=0.2, random_state=1)
 
 encoder = Sequential(name = 'freezed_encoder')
 encoder.add(encoder_1)
-encoder.add(encoder_2)
+# encoder.add(encoder_2)
 encoder.trainable = False
 
 classifier = Sequential(name = 'classifier')
 classifier.add(encoder)
-classifier.add(Dense(15, activation ='relu'))
 classifier.add(Dense(len(Y_classif.columns), activation = 'softmax'))
 
 
 classifier.compile(metrics=['accuracy'],
                     loss='categorical_crossentropy',
-                    optimizer='adam')
+                    optimizer='sgd')
 classifier.summary()
 
 
@@ -123,19 +125,3 @@ history = classifier.fit(X_train_classif, Y_train_classif,
                 validation_data = (X_test_classif, Y_test_classif),
                 shuffle=True,
                 verbose=1)
-
-
-# plt.plot(history.history['accuracy'])
-# plt.title('model accuracy')
-# plt.ylabel('accuracy')
-# plt.xlabel('epoch')
-# plt.legend(['train'], loc='upper left')
-# plt.show()
-
-# train_predictions = autoencoder.predict(Xscaled)
-# print('Train reconstrunction error\n', mean_squared_error(Xscaled, train_predictions))
-
-# w_encoder = np.round(np.transpose(autoencoder.layers[0].get_weights()[0]), 3)
-# w_decoder = np.round(autoencoder.layers[1].get_weights()[0], 3)
-# print('Encoder weights\n', w_encoder)
-# print('Decoder weights\n', w_decoder)
